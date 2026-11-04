@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gwm"
+version = "0.1.0"
+description = "Git worktree manager: submodules as worktrees of shared repositories"
+requires-python = ">=3.13"
+
+[project.scripts]
+git-wm = "gwm.cli:main"
+
+[tool.setuptools]
+packages = ["gwm"]
