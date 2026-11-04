@@ -122,6 +122,21 @@ class GitLink:
         return os.path.isdir(cls.entry(worktree))
 
     @classmethod
+    def target(cls, worktree):
+        """
+        Path written in the gitfile of a working tree, or None when its
+        `.git` entry is not a gitfile.
+        """
+        entry = cls.entry(worktree)
+        if not os.path.isfile(entry):
+            return None
+        with open(entry) as f:
+            content = f.read().strip()
+        if not content.startswith("gitdir:"):
+            raise GwmError(f"{entry}: not a gitfile")
+        return content[len("gitdir:"):].strip()
+
+    @classmethod
     def read(cls, worktree):
         """
         Real path of the git directory of a working tree, or None when
@@ -130,13 +145,9 @@ class GitLink:
         entry = cls.entry(worktree)
         if os.path.isdir(entry):
             return os.path.realpath(entry)
-        if not os.path.isfile(entry):
+        target = cls.target(worktree)
+        if target is None:
             return None
-        with open(entry) as f:
-            content = f.read().strip()
-        if not content.startswith("gitdir:"):
-            raise GwmError(f"{entry}: not a gitfile")
-        target = content[len("gitdir:"):].strip()
         return os.path.realpath(os.path.join(worktree, target))
 
     @classmethod
@@ -170,6 +181,22 @@ class GitDir:
             return None
         with open(path) as f:
             return os.path.realpath(os.path.join(gitdir, f.read().strip()))
+
+    @staticmethod
+    def backlink(gitdir):
+        """
+        Real path of the `.git` entry a linked worktree git directory
+        refers to, or None if it has no backlink.
+        """
+        path = os.path.join(gitdir, "gitdir")
+        if not os.path.isfile(path):
+            return None
+        with open(path) as f:
+            return os.path.realpath(os.path.join(gitdir, f.read().strip()))
+
+    @staticmethod
+    def is_locked(gitdir):
+        return os.path.exists(os.path.join(gitdir, "locked"))
 
     @classmethod
     def check_movable(cls, gitdir):

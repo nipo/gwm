@@ -2,6 +2,7 @@ import os
 import re
 import shutil
 import tempfile
+import time
 
 from .git import Git, GitDir, GitLink, GwmError
 from .url import RepoUrl
@@ -249,6 +250,52 @@ class SharedRepo:
     def unlock(self, gitdir, target):
         if os.path.exists(os.path.join(gitdir, "locked")):
             self.git.run("worktree", "unlock", target)
+
+
+    def worktree_entries(self):
+        """
+        Map of linked worktree git directory to the `.git` entry path
+        it links back to.
+        """
+        base = os.path.join(self.common_dir(), "worktrees")
+        if not os.path.isdir(base):
+            return {}
+        result = {}
+        for name in sorted(os.listdir(base)):
+            gitdir = os.path.join(base, name)
+            backlink = GitDir.backlink(gitdir)
+            if backlink is not None:
+                result[gitdir] = backlink
+        return result
+
+    def preserve_head(self, wt_gitdir):
+        """
+        Saves HEAD of a worktree under `refs/gwm/removed/` when no ref
+        contains it.  Returns the created ref, if any.
+        """
+        head = Git("/", git_dir=wt_gitdir).value(
+            "rev-parse", "--verify", "-q", "HEAD")
+        if head is None:
+            return None
+        if self.git.run("for-each-ref", "--count=1", "--contains", head,
+                        "--format=%(refname)").strip():
+            return None
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        ref = f"refs/gwm/removed/{os.path.basename(wt_gitdir)}-{stamp}"
+        self.git.run("update-ref", ref, head, "")
+        return ref
+
+    def drop_worktree(self, wt_gitdir):
+        """
+        Removes metadata of a linked worktree, leaving its files alone.
+        Returns the ref keeping its HEAD, if one was needed.
+        """
+        if os.path.dirname(wt_gitdir) != os.path.join(
+                self.common_dir(), "worktrees"):
+            raise GwmError(f"{wt_gitdir}: not a worktree of {self.path}")
+        ref = self.preserve_head(wt_gitdir)
+        shutil.rmtree(wt_gitdir)
+        return ref
 
 
 class Relocator:

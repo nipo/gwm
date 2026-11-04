@@ -46,6 +46,19 @@ Unmapped submodules are handled as plain git submodules.
   to standalone repositories, absorbed in the superproject git
   directory unless `--embedded` is given.
 
+- `git wm remove [--force] paths`: `git submodule deinit` equivalent.
+  Worktree submodules have their files and worktree metadata removed;
+  their HEAD is kept under `refs/gwm/removed/` when no ref contains
+  it.  Worktrees nested in removed submodules are removed as well.
+
+- `git wm repair [--prune] [paths]`: restores links between submodule
+  worktrees and shared repositories after a project or a shared
+  repository moved (update the configuration first in the latter
+  case), or after `git mv` of a submodule.  Relocks unlocked worktree
+  submodules.  Reports worktrees of known shared repositories whose
+  checkout in the project is gone (e.g. after a native `git submodule
+  deinit`); `--prune` drops their metadata.
+
 - `git wm status [paths]`: shows the state of submodules.
 
 - `git wm resolve urls`: shows which mapping applies to URLs.
@@ -53,4 +66,7 @@ Unmapped submodules are handled as plain git submodules.
 ## Caveats
 
 Native `git submodule deinit` and `git submodule absorbgitdirs` do not
-handle worktree submodules.  Use `git wm detach` first.
+handle worktree submodules.  Use `git wm remove` and `git wm detach`.
+
+Copying a project duplicates the links to worktree metadata of the
+original one.  `git wm repair` refuses to steal them.

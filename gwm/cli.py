@@ -4,7 +4,8 @@ import sys
 
 from .config import Config
 from .git import Git, GwmError
-from .ops import Adopter, Detacher, Inspector, Updater, Workspace
+from .ops import (Adopter, Detacher, Inspector, Remover, Repairer, Updater,
+                  Workspace)
 from .repo import Superproject
 from .url import RepoUrl
 
@@ -43,6 +44,23 @@ class Cli:
         p.add_argument("--embedded", dest="absorb", action="store_false",
                        help="keep the git directory inside the submodule")
         p.add_argument("paths", nargs="+")
+
+        p = commands.add_parser(
+            "remove", help="deinitialize submodules, removing worktree "
+            "metadata of worktree ones")
+        p.add_argument("-f", "--force", action="store_true",
+                       help="discard local changes")
+        p.add_argument("paths", nargs="+")
+
+        p = commands.add_parser(
+            "repair", help="fix links between submodule worktrees and "
+            "shared repositories")
+        p.add_argument("--no-recursive", dest="recursive",
+                       action="store_false")
+        p.add_argument("--prune", action="store_true",
+                       help="drop metadata of worktrees whose checkout "
+                       "is gone")
+        p.add_argument("paths", nargs="*")
 
         p = commands.add_parser("status", help="show submodule states")
         p.add_argument("--no-recursive", dest="recursive",
@@ -84,6 +102,10 @@ class Cli:
                     op = Adopter(ws, args.recursive)
                 case "detach":
                     op = Detacher(ws, args.absorb)
+                case "remove":
+                    op = Remover(ws, args.force)
+                case "repair":
+                    op = Repairer(ws, args.recursive, args.prune)
                 case "status":
                     op = Inspector(ws, args.recursive)
                 case _:

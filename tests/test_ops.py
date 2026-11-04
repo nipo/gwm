@@ -238,3 +238,169 @@ class StatusTest(Scenario):
         self.write(os.path.join(work, "deps", "lib", "lib.txt"), "x\n")
         out = self.gwm(work, "status")
         self.assertIn("dirty", out)
+
+
+class RemoveTest(Scenario):
+    def setUp(self):
+        super().setUp()
+        self.work = self.clone(self.proj, "work")
+        self.gwm(self.work, "update")
+        self.lib = os.path.join(self.work, "deps", "lib")
+
+    def test_clean(self):
+        gitdir = self.git(self.lib, "rev-parse", "--absolute-git-dir")
+        self.gwm(self.work, "remove", "deps/lib")
+        self.assertEqual(os.listdir(self.lib), [])
+        self.assertFalse(os.path.exists(gitdir))
+        self.assertEqual(len(self.git(self.store, "worktree",
+                                      "list").splitlines()), 1)
+        status = self.git(self.work, "submodule", "status", "deps/lib")
+        self.assertTrue(status.startswith("-"), status)
+        self.assertEqual(self.git(self.store, "for-each-ref",
+                                  "refs/gwm/"), "")
+        self.gwm(self.work, "update")
+        self.assert_worktree_of(self.lib, self.store)
+
+    def test_dirty_needs_force(self):
+        self.write(os.path.join(self.lib, "untracked"), "x\n")
+        self.gwm(self.work, "remove", "deps/lib", expect=1)
+        self.assertTrue(os.path.exists(os.path.join(self.lib, "lib.txt")))
+        self.gwm(self.work, "remove", "--force", "deps/lib")
+        self.assertEqual(os.listdir(self.lib), [])
+
+    def test_orphan_head_is_kept(self):
+        self.git(self.lib, "commit", "-q", "--allow-empty", "-m", "orphan")
+        head = self.git(self.lib, "rev-parse", "HEAD")
+        out = self.gwm(self.work, "remove", "deps/lib")
+        refs = self.git(self.store, "for-each-ref",
+                        "--format=%(refname) %(objectname)",
+                        "refs/gwm/removed/")
+        ref, commit = refs.split()
+        self.assertEqual(commit, head)
+        self.assertIn(ref, out)
+
+    def test_unmapped_is_deinitialized(self):
+        self.gwm(self.work, "remove", "other")
+        self.assertEqual(os.listdir(os.path.join(self.work, "other")), [])
+        self.assertTrue(os.path.isdir(
+            os.path.join(self.work, ".git", "modules", "other")))
+
+
+class RemoveNestedTest(Scenario):
+    def setUp(self):
+        super().setUp()
+        self.mid = self.make_repo("mid", [{"mid.txt": "mid\n"}])
+        self.add_submodule(self.mid, self.lib, "lib")
+        self.add_submodule(self.mid, self.other, "other")
+        top = self.make_repo("top", [{"top.txt": "top\n"}])
+        self.add_submodule(top, self.mid, "mid")
+        self.mid_store = self.bare_store("mid", self.mid)
+        self.write_config(self.root, {"lib": (self.lib, self.store),
+                                      "mid": (self.mid, self.mid_store)})
+        self.work = self.clone(top, "work")
+        self.gwm(self.work, "update")
+
+    def test_nested_absorbed_needs_force(self):
+        self.gwm(self.work, "remove", "mid", expect=1)
+        self.assertTrue(os.path.exists(
+            os.path.join(self.work, "mid", "other", "other.txt")))
+        self.gwm(self.work, "remove", "--force", "mid")
+        self.assertEqual(os.listdir(os.path.join(self.work, "mid")), [])
+        for store in (self.store, self.mid_store):
+            self.assertEqual(
+                len(self.git(store, "worktree", "list").splitlines()), 1)
+
+    def test_nested_worktrees_only(self):
+        self.gwm(os.path.join(self.work, "mid"), "remove", "other")
+        self.gwm(self.work, "remove", "mid")
+        for store in (self.store, self.mid_store):
+            self.assertEqual(
+                len(self.git(store, "worktree", "list").splitlines()), 1)
+
+
+class RepairTest(Scenario):
+    def setUp(self):
+        super().setUp()
+        self.work = self.clone(self.proj, "work")
+        self.gwm(self.work, "update")
+
+    def lib_path(self, work):
+        return os.path.join(work, "deps", "lib")
+
+    def assert_healthy(self, work):
+        lib = self.lib_path(work)
+        self.assert_worktree_of(lib, self.store)
+        self.assertEqual(self.git(lib, "status", "--porcelain"), "")
+        self.assertIn(os.path.realpath(lib),
+                      self.git(self.store, "worktree", "list"))
+        out = self.gwm(work, "status")
+        self.assertNotIn("broken", out)
+        self.assertNotIn("unlocked", out)
+        self.assert_clean_submodules(work)
+
+    def test_healthy_is_noop(self):
+        self.assertEqual(self.gwm(self.work, "repair"), "")
+
+    def test_project_moved(self):
+        moved = self.path("moved")
+        os.rename(self.work, moved)
+        self.assertIn("broken backlink", self.gwm(moved, "status"))
+        self.gwm(moved, "repair")
+        self.assert_healthy(moved)
+
+    def test_submodule_git_mv(self):
+        self.git(self.work, "mv", "deps/lib", "lib")
+        self.git(self.work, "commit", "-q", "-m", "move lib")
+        self.gwm(self.work, "repair")
+        lib = os.path.join(self.work, "lib")
+        self.assert_worktree_of(lib, self.store)
+        self.assertTrue(os.path.isabs(
+            self.read(os.path.join(lib, ".git")).split(":", 1)[1].strip()))
+        gitdir = self.git(lib, "rev-parse", "--absolute-git-dir")
+        self.assertFalse(os.path.exists(os.path.join(gitdir, "config")))
+        self.assertEqual(self.gwm(self.work, "repair"), "")
+        self.assertIn(os.path.realpath(lib),
+                      self.git(self.store, "worktree", "list"))
+        self.assert_clean_submodules(self.work)
+
+    def test_store_moved(self):
+        moved = self.path("store", "lib-moved.git")
+        os.rename(self.store, moved)
+        self.store = moved
+        self.write_config(self.root, {"lib": (self.lib, moved)})
+        self.gwm(self.work, "repair")
+        self.assert_healthy(self.work)
+
+    def test_both_moved(self):
+        moved_store = self.path("store", "lib-moved.git")
+        os.rename(self.store, moved_store)
+        self.store = moved_store
+        self.write_config(self.root, {"lib": (self.lib, moved_store)})
+        moved = self.path("moved")
+        os.rename(self.work, moved)
+        self.gwm(moved, "repair")
+        self.assert_healthy(moved)
+
+    def test_copy_is_refused(self):
+        import shutil
+        copy = self.path("copy")
+        shutil.copytree(self.work, copy, symlinks=True)
+        self.gwm(copy, "repair", expect=1)
+        self.assert_healthy(self.work)
+
+    def test_relock(self):
+        self.git(self.store, "worktree", "unlock", self.lib_path(self.work))
+        self.assertIn("locked", self.gwm(self.work, "repair"))
+        self.assert_healthy(self.work)
+
+    def test_prune_after_native_deinit(self):
+        self.git(self.work, "submodule", "deinit", "-q", "-f", "deps/lib")
+        out = self.gwm(self.work, "repair")
+        self.assertIn("stale worktree work-deps-lib", out)
+        self.assertEqual(
+            len(self.git(self.store, "worktree", "list").splitlines()), 2)
+        self.gwm(self.work, "repair", "--prune")
+        self.assertEqual(
+            len(self.git(self.store, "worktree", "list").splitlines()), 1)
+        self.gwm(self.work, "update")
+        self.assert_healthy(self.work)

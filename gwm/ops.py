@@ -1,4 +1,5 @@
 import os
+import re
 import shutil
 import sys
 import time
@@ -457,3 +458,241 @@ class Inspector:
             f"{state}{extra}")
         if self.recursive and head is not None:
             self.run(Superproject(sub.abspath))
+
+
+class Remover:
+    """
+    Equivalent of `git submodule deinit`.
+
+    Worktree submodules have their files and worktree metadata removed.
+    Their HEAD is kept under `refs/gwm/removed/` when no ref contains
+    it.  Other submodules are handed to `git submodule deinit`, after
+    worktrees nested in them are removed.
+    """
+
+    def __init__(self, workspace, force):
+        self.ws = workspace
+        self.force = force
+
+    def run(self, superproject, paths):
+        if not paths:
+            raise GwmError("remove needs explicit submodule paths")
+        subs = self.ws.select(superproject, paths)
+        for sub in subs:
+            self.check(sub, inside_worktree=False)
+        for sub in subs:
+            self.remove(sub, top=True)
+
+    @staticmethod
+    def is_worktree(sub):
+        gitdir = sub.gitdir()
+        return gitdir is not None and GitDir.common_dir(gitdir) is not None
+
+    @staticmethod
+    def children(sub):
+        return [c for c in Superproject(sub.abspath).submodules()
+                if c.is_populated()]
+
+    def check(self, sub, inside_worktree):
+        if not sub.is_populated():
+            return
+        worktree = self.is_worktree(sub)
+        if inside_worktree and not worktree and not self.force:
+            raise GwmError(
+                f"{sub.abspath}: git directory is stored in an enclosing "
+                f"worktree and would be lost, detach it first or use "
+                f"--force")
+        if not self.force and sub.is_dirty():
+            raise GwmError(f"{sub.abspath}: has local changes, use --force "
+                           f"to discard them")
+        for child in self.children(sub):
+            self.check(child, inside_worktree or worktree)
+
+    @staticmethod
+    def wipe(directory):
+        for name in os.listdir(directory):
+            path = os.path.join(directory, name)
+            if os.path.isdir(path) and not os.path.islink(path):
+                shutil.rmtree(path)
+            else:
+                os.remove(path)
+
+    def remove(self, sub, top):
+        report = self.ws.reporter
+        if sub.is_populated():
+            for child in self.children(sub):
+                self.remove(child, top=False)
+        gitdir = sub.gitdir()
+        common = GitDir.common_dir(gitdir) if gitdir is not None else None
+        if common is None:
+            if top:
+                args = ["submodule", "deinit", "-q"]
+                if self.force:
+                    args.append("--force")
+                sub.superproject.git.run(*args, "--", sub.path)
+                report.say(sub.abspath, "deinitialized")
+            return
+
+        repo = SharedRepo(common)
+        self.wipe(sub.abspath)
+        ref = repo.drop_worktree(gitdir)
+        if top:
+            sub.superproject.git.run(
+                "config", "--remove-section", f"submodule.{sub.name}",
+                check=False)
+        message = f"removed worktree of {repo.path}"
+        if ref is not None:
+            message += f", HEAD kept as {ref}"
+        report.say(sub.abspath, message)
+
+
+class Repairer:
+    """
+    Restores links between submodule worktrees and their shared
+    repository after either of them moved, and locks unlocked worktree
+    submodules.
+
+    Worktrees of known shared repositories whose checkout used to be in
+    the inspected tree but is gone are reported, and their metadata is
+    dropped when pruning.
+    """
+
+    WORKTREE_LINK = re.compile(r"/worktrees/([^/]+)/?$")
+
+    def __init__(self, workspace, recursive, prune):
+        self.ws = workspace
+        self.recursive = recursive
+        self.pruning = prune
+        self.repos = {}
+
+    def run(self, superproject, paths=()):
+        subs = self.ws.select(superproject, paths)
+        self.walk(superproject, subs)
+        if paths:
+            scopes = [s.abspath for s in subs]
+        else:
+            scopes = [superproject.toplevel]
+        self.prune(scopes)
+
+    def known(self, repo):
+        return self.repos.setdefault(repo.common_dir(), repo)
+
+    def collect(self, superproject):
+        for f in self.ws.config.chain(superproject.toplevel):
+            for mapping in f.mappings.values():
+                repo = SharedRepo(mapping.path)
+                if repo.exists():
+                    self.known(repo)
+
+    def walk(self, superproject, subs):
+        self.collect(superproject)
+        for sub in subs:
+            self.repair(sub)
+            gitdir = sub.gitdir()
+            if self.recursive and gitdir is not None and os.path.isdir(gitdir):
+                child = Superproject(sub.abspath)
+                self.walk(child, child.submodules())
+
+    @staticmethod
+    def check_not_shared(sub, wt_gitdir):
+        """
+        Raises if the worktree metadata is in use by another checkout,
+        as happens when a project is copied.
+        """
+        backlink = GitDir.backlink(wt_gitdir)
+        if backlink is None or backlink == os.path.realpath(
+                GitLink.entry(sub.abspath)):
+            return
+        other = os.path.dirname(backlink)
+        if GitLink.read(other) == wt_gitdir:
+            raise GwmError(
+                f"{sub.abspath}: worktree metadata {wt_gitdir} is also used "
+                f"by {other}, one of them is probably a copy")
+
+    def relink(self, sub, stale):
+        m = self.WORKTREE_LINK.search(stale)
+        if m is None:
+            raise GwmError(f"{sub.abspath}: git directory {stale} is missing")
+        if sub.url() is None:
+            raise GwmError(f"{sub.abspath}: git directory {stale} is missing "
+                           f"and submodule is not initialized")
+        raw, url, mapping = self.ws.mapping(sub)
+        if mapping is None:
+            raise GwmError(f"{sub.abspath}: git directory {stale} is missing "
+                           f"and {raw} is unmapped")
+        repo = SharedRepo(mapping.path)
+        if not repo.exists():
+            raise GwmError(f"{sub.abspath}: git directory {stale} is missing "
+                           f"and {mapping.path} does not exist")
+        wt_gitdir = os.path.join(repo.common_dir(), "worktrees", m[1])
+        if not os.path.isdir(wt_gitdir):
+            raise GwmError(f"{sub.abspath}: no worktree {m[1]} in "
+                           f"{repo.path}")
+        self.check_not_shared(sub, wt_gitdir)
+        GitLink.write(sub.abspath, wt_gitdir, relative=False)
+        self.ws.reporter.say(sub.abspath, f"linked to {wt_gitdir}")
+        return self.known(repo), wt_gitdir
+
+    def drop_stray_config(self, sub, wt_gitdir):
+        """
+        `git mv` of a submodule writes core.worktree in a `config` file
+        of the worktree git directory, which git never reads for linked
+        worktrees.
+        """
+        path = os.path.join(wt_gitdir, "config")
+        if not os.path.isfile(path):
+            return
+        keys = Git("/").run("config", "--file", path, "--name-only",
+                            "--list").split()
+        if keys != ["core.worktree"]:
+            raise GwmError(f"{path}: unexpected worktree config")
+        os.remove(path)
+        self.ws.reporter.say(sub.abspath, f"removed stray {path}")
+
+    def repair(self, sub):
+        if not os.path.isfile(GitLink.entry(sub.abspath)):
+            return
+        wt_gitdir = sub.gitdir()
+        if os.path.isdir(wt_gitdir):
+            common = GitDir.common_dir(wt_gitdir)
+            if common is None:
+                return
+            repo = self.known(SharedRepo(common))
+        else:
+            repo, wt_gitdir = self.relink(sub, wt_gitdir)
+
+        if not os.path.isabs(GitLink.target(sub.abspath)):
+            GitLink.write(sub.abspath, wt_gitdir, relative=False)
+            self.ws.reporter.say(sub.abspath, "made gitfile absolute")
+        self.drop_stray_config(sub, wt_gitdir)
+
+        if GitDir.backlink(wt_gitdir) != os.path.realpath(
+                GitLink.entry(sub.abspath)):
+            self.check_not_shared(sub, wt_gitdir)
+            repo.git.run("worktree", "repair", sub.abspath)
+            self.ws.reporter.say(sub.abspath,
+                                 f"fixed backlink in {wt_gitdir}")
+        if not GitDir.is_locked(wt_gitdir):
+            repo.lock(sub.abspath, self.ws.lock_reason(sub))
+            self.ws.reporter.say(sub.abspath, "locked")
+
+    def prune(self, scopes):
+        prefixes = [os.path.join(os.path.realpath(s), "") for s in scopes]
+        for repo in self.repos.values():
+            for wt_gitdir, backlink in repo.worktree_entries().items():
+                if not any(backlink.startswith(p) for p in prefixes):
+                    continue
+                worktree = os.path.dirname(backlink)
+                if GitLink.read(worktree) == os.path.realpath(wt_gitdir):
+                    continue
+                name = os.path.basename(wt_gitdir)
+                if not self.pruning:
+                    self.ws.reporter.say(
+                        worktree, f"stale worktree {name} of {repo.path}, "
+                        f"use --prune to drop it")
+                    continue
+                ref = repo.drop_worktree(wt_gitdir)
+                message = f"dropped stale worktree {name} of {repo.path}"
+                if ref is not None:
+                    message += f", HEAD kept as {ref}"
+                self.ws.reporter.say(worktree, message)
