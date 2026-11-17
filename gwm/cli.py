@@ -4,6 +4,7 @@ import sys
 
 from .config import Config
 from .git import Git, GwmError
+from .bump import Bumper
 from .heads import HeadsInspector
 from .integrate import Integrator
 from .propagate import Propagator
@@ -120,6 +121,23 @@ class Cli:
         p.add_argument("name", help="mapping name")
 
         p = commands.add_parser(
+            "bump", help="record HEAD of checkouts of a shared repository "
+            "in their superprojects")
+        p.add_argument("--in", dest="within", action="append", default=[],
+                       metavar="DIR", help="only bump checkouts below DIR "
+                       "(repeatable)")
+        p.add_argument("-c", "--commit", action="store_true",
+                       help="commit each gitlink alone")
+        p.add_argument("-m", "--message", help="commit message")
+        p.add_argument("--log", action="store_true",
+                       help="list picked up commits in the message")
+        p.add_argument("--allow-detached", action="store_true",
+                       help="commit on a detached superproject HEAD")
+        p.add_argument("-n", "--dry-run", action="store_true",
+                       help="only show what would be done")
+        p.add_argument("name", help="mapping name")
+
+        p = commands.add_parser(
             "resolve", help="show the mapping applying to URLs")
         p.add_argument("urls", nargs="+")
 
@@ -158,6 +176,10 @@ class Cli:
                     op.abort(args.name)
                 else:
                     op.start(args.name)
+                return 0
+            if args.command == "bump":
+                Bumper(ws, args.within, args.commit, args.message, args.log,
+                       args.allow_detached, args.dry_run).run(args.name)
                 return 0
             if args.command == "propagate":
                 Propagator(ws, args.rev, args.within, args.include_branches,

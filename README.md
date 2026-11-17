@@ -98,6 +98,18 @@ Unmapped submodules are handled as plain git submodules.
   `refs/gwm/propagate/`, and flagged when the upstream branch of their
   superproject records them.  `-n` only shows what would be done.
 
+- `git wm bump [--in dir]... [-c] [-m message] [--log]
+  [--allow-detached] [-n] name`: stages HEAD of checkouts of a shared
+  repository (those below `--in` directories when given) as the gitlink
+  of their superproject, leaving the rest of its index alone.  With
+  `-c`, commits each gitlink alone, as `<path>: Update to <commit>` by
+  default, or with `-m` message; `--log` lists picked up commits.
+  Superprojects with a detached HEAD are skipped unless
+  `--allow-detached` is given.  Heads not on any remote of the shared
+  repository are flagged, as are superprojects that are themselves
+  checkouts of a mapped repository.  `-n` only shows what would be
+  done.
+
 - `git wm resolve urls`: shows which mapping applies to URLs.
 
 ## Caveats
