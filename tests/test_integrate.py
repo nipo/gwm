@@ -1,10 +1,9 @@
 import os
-import subprocess
 
-from .test_heads import HeadsTest
+from .test_heads import Diverged
 
 
-class IntegrateTest(HeadsTest):
+class IntegrateTest(Diverged):
     BRANCH = "refs/heads/gwm/integration"
 
     def result(self):
@@ -19,9 +18,8 @@ class IntegrateTest(HeadsTest):
                                rev).splitlines())
 
     def is_ancestor(self, commit, rev):
-        return subprocess.run(
-            ["git", "merge-base", "--is-ancestor", commit, rev],
-            cwd=self.store).returncode == 0
+        return self.git_ok(self.store, "merge-base", "--is-ancestor",
+                           commit, rev)
 
     def scratch(self):
         return os.path.join(self.store, "gwm-integrate")

@@ -3,7 +3,7 @@ import os
 from .test_ops import Scenario
 
 
-class HeadsTest(Scenario):
+class Diverged(Scenario):
     """
     Three checkouts of `lib`: `a` at the gitlink, `b` with two commits
     on top, `c` diverging with a commit of its own and a copy of one
@@ -39,6 +39,9 @@ class HeadsTest(Scenario):
     def head(self, repo):
         return self.git(repo, "rev-parse", "HEAD")[:10]
 
+
+
+class HeadsTest(Diverged):
     def test_groups_and_counts(self):
         out = self.gwm(self.root, "heads", "lib")
         lines = out.splitlines()

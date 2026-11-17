@@ -48,6 +48,10 @@ class GitTestCase(unittest.TestCase):
                 f"git {' '.join(args)} in {cwd}: {proc.stderr}")
         return proc.stdout.rstrip("\n")
 
+    def git_ok(self, cwd, *args):
+        return subprocess.run(["git", *args], cwd=cwd,
+                              capture_output=True).returncode == 0
+
     def gwm(self, cwd, *args, expect=0):
         out = io.StringIO()
         err = io.StringIO()
