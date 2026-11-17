@@ -131,6 +131,13 @@ class Checkout:
     def git(self):
         return Git(self.path)
 
+    def gitdir(self):
+        return os.path.realpath(
+            self.git().run("rev-parse", "--absolute-git-dir").strip())
+
+    def worktree_id(self):
+        return "main" if self.main else os.path.basename(self.gitdir())
+
     def is_dirty(self):
         out = self.git().run("status", "--porcelain", "--ignore-submodules")
         return bool(out.strip())

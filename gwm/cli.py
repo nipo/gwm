@@ -6,6 +6,7 @@ from .config import Config
 from .git import Git, GwmError
 from .heads import HeadsInspector
 from .integrate import Integrator
+from .propagate import Propagator
 from .ops import (Adopter, Detacher, Inspector, Remover, Repairer, Updater,
                   Workspace)
 from .repo import Superproject
@@ -99,6 +100,26 @@ class Cli:
         p.add_argument("name", help="mapping name")
 
         p = commands.add_parser(
+            "propagate", help="move checkouts of a shared repository to "
+            "a revision")
+        p.add_argument("--rev", help="revision to move to (default: "
+                       "gwm/integration)")
+        p.add_argument("--in", dest="within", action="append", default=[],
+                       metavar="DIR", help="only move checkouts below DIR "
+                       "(repeatable)")
+        p.add_argument("--include-branches", action="store_true",
+                       help="also move checkouts on a branch, resetting "
+                       "the branch")
+        p.add_argument("-m", "--merge", action="store_true",
+                       help="move dirty checkouts, merging local changes")
+        p.add_argument("-f", "--force", action="store_true",
+                       help="move checkouts whose changes are not all in "
+                       "the revision")
+        p.add_argument("-n", "--dry-run", action="store_true",
+                       help="only show what would be done")
+        p.add_argument("name", help="mapping name")
+
+        p = commands.add_parser(
             "resolve", help="show the mapping applying to URLs")
         p.add_argument("urls", nargs="+")
 
@@ -137,6 +158,11 @@ class Cli:
                     op.abort(args.name)
                 else:
                     op.start(args.name)
+                return 0
+            if args.command == "propagate":
+                Propagator(ws, args.rev, args.within, args.include_branches,
+                           args.merge, args.force, args.dry_run).run(
+                               args.name)
                 return 0
             sp = Superproject.find(ws.cwd)
             match args.command:

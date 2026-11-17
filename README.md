@@ -86,6 +86,18 @@ Unmapped submodules are handled as plain git submodules.
   `--abort`.  Changes of a head without an equivalent in the result
   (e.g. skipped during a rebase) are listed at the end.
 
+- `git wm propagate [--rev rev] [--in dir]... [--include-branches]
+  [-m] [-f] [-n] name`: moves checkouts of a shared repository (those
+  below `--in` directories when given) to `rev` (default:
+  `gwm/integration`), as detached HEADs.  Checkouts on a branch are
+  skipped unless `--include-branches` is given, which resets the branch.
+  Dirty checkouts are skipped unless `-m` merges local changes.
+  Checkouts with changes not found in `rev` (compared by patch-id) are
+  skipped unless `-f` is given.  Worktrees that are not submodules are
+  left alone.  Old heads not contained in `rev` are kept under
+  `refs/gwm/propagate/`, and flagged when the upstream branch of their
+  superproject records them.  `-n` only shows what would be done.
+
 - `git wm resolve urls`: shows which mapping applies to URLs.
 
 ## Caveats
