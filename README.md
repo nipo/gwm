@@ -61,6 +61,17 @@ Unmapped submodules are handled as plain git submodules.
 
 - `git wm status [paths]`: shows the state of submodules.
 
+- `git wm heads [-v] [--base rev] [names]`: shows checkouts of shared
+  repositories (all mappings visible from the current directory, or
+  the named ones), grouped by HEAD.  Each head is compared to `--base`,
+  or to the upstream of the shared repository branch, or to the
+  default branch of a remote fetching a mapped URL.  Heads contained in
+  another one are listed below it; for the others, changes not found
+  in the base nor in another head are counted, comparing patch-ids so
+  rebased copies match.  `-v` lists them.  Checkouts are flagged when
+  dirty, on a branch, or when their superproject does not record their
+  HEAD in its HEAD commit.
+
 - `git wm resolve urls`: shows which mapping applies to URLs.
 
 ## Caveats

@@ -4,6 +4,7 @@ import sys
 
 from .config import Config
 from .git import Git, GwmError
+from .heads import HeadsInspector
 from .ops import (Adopter, Detacher, Inspector, Remover, Repairer, Updater,
                   Workspace)
 from .repo import Superproject
@@ -68,6 +69,16 @@ class Cli:
         p.add_argument("paths", nargs="*")
 
         p = commands.add_parser(
+            "heads", help="show checkouts of shared repositories grouped "
+            "by HEAD")
+        p.add_argument("--base", help="compare heads to this revision "
+                       "instead of the upstream branch")
+        p.add_argument("-v", "--verbose", action="store_true",
+                       help="list commits found in a single head")
+        p.add_argument("names", nargs="*",
+                       help="mapping names (default: all mappings)")
+
+        p = commands.add_parser(
             "resolve", help="show the mapping applying to URLs")
         p.add_argument("urls", nargs="+")
 
@@ -93,6 +104,9 @@ class Cli:
             ws = Workspace(os.path.abspath(args.directory), Config())
             if args.command == "resolve":
                 cls.resolve(ws, args.urls)
+                return 0
+            if args.command == "heads":
+                HeadsInspector(ws, args.base, args.verbose).run(args.names)
                 return 0
             sp = Superproject.find(ws.cwd)
             match args.command:
