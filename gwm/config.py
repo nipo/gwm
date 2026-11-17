@@ -124,3 +124,14 @@ class Config:
             if mapping is not None:
                 return mapping
         return None
+
+    def mappings(self, directory):
+        """
+        Mappings visible from `directory`, by name.  The nearest file
+        defining a name wins.
+        """
+        result = {}
+        for f in self.chain(directory):
+            for mapping in f.mappings.values():
+                result.setdefault(mapping.name, mapping)
+        return result

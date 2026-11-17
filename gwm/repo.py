@@ -107,6 +107,61 @@ class Superproject:
         return result
 
 
+class Checkout:
+    """
+    A working tree of a shared repository: its main working tree or a
+    linked worktree, as listed by `git worktree list`.
+    """
+
+    def __init__(self, repo, path, head, branch, main, locked, prunable):
+        self.repo = repo
+        self.path = path
+        self.head = head
+        self.branch = branch
+        self.main = main
+        self.locked = locked
+        self.prunable = prunable
+
+    def __repr__(self):
+        return f"Checkout({self.path!r}, {self.head!r})"
+
+    def exists(self):
+        return not self.prunable and os.path.isdir(self.path)
+
+    def git(self):
+        return Git(self.path)
+
+    def is_dirty(self):
+        out = self.git().run("status", "--porcelain", "--ignore-submodules")
+        return bool(out.strip())
+
+    def superproject(self):
+        """
+        Superproject this checkout is a submodule of, or None.
+        """
+        if self.main:
+            return None
+        toplevel = self.git().value(
+            "rev-parse", "--show-superproject-working-tree")
+        return Superproject(toplevel) if toplevel else None
+
+    def recorded(self, superproject):
+        """
+        How the superproject records HEAD of this checkout: "committed"
+        in its HEAD, "staged" in its index only, or None.
+        """
+        path = os.path.relpath(self.path, superproject.toplevel)
+        if superproject.git.value(
+                "rev-parse", "-q", "--verify",
+                f"HEAD:{path}") == self.head:
+            return "committed"
+        out = superproject.git.run("ls-files", "--stage", "-z", "--", path)
+        meta = out.split("\0")[0].partition("\t")[0].split(" ")
+        if len(meta) == 3 and meta[0] == "160000" and meta[1] == self.head:
+            return "staged"
+        return None
+
+
 class SharedRepo:
     """
     A repository whose object store and refs are shared by worktrees
@@ -196,6 +251,29 @@ class SharedRepo:
                 result[path] = None
             elif line.startswith("branch "):
                 result[path] = line[len("branch "):]
+        return result
+
+    def checkouts(self):
+        """
+        Working trees of this repository, bare main one excluded.
+        """
+        out = self.git.run("worktree", "list", "--porcelain", "-z")
+        result = []
+        for index, record in enumerate(out.split("\0\0")):
+            fields = {}
+            for item in record.split("\0"):
+                key, _, value = item.partition(" ")
+                if key:
+                    fields[key] = value
+            if "worktree" not in fields or "bare" in fields:
+                continue
+            branch = fields.get("branch")
+            if fields.get("HEAD") == "0" * len(fields.get("HEAD", "")):
+                fields["HEAD"] = None
+            result.append(Checkout(
+                self, os.path.realpath(fields["worktree"]),
+                fields.get("HEAD"), branch, main=index == 0,
+                locked="locked" in fields, prunable="prunable" in fields))
         return result
 
     def is_checked_out(self, branch):
