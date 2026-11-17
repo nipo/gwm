@@ -21,6 +21,18 @@ class Reporter:
     def say(self, path, message):
         print(f"{self.path(path)}: {message}", file=self.stream)
 
+    def short(self, path):
+        """
+        `path` relative to the current directory when below it, else
+        relative to the home directory when below it, else absolute.
+        """
+        if path == self.cwd or path.startswith(self.cwd + os.sep):
+            return os.path.relpath(path, self.cwd)
+        home = os.path.expanduser("~")
+        if path.startswith(home + os.sep):
+            return "~" + path[len(home):]
+        return path
+
     def line(self, text):
         print(text, file=self.stream)
 
@@ -34,6 +46,17 @@ class Workspace:
         self.cwd = os.path.realpath(cwd)
         self.config = config or Config()
         self.reporter = reporter or Reporter(self.cwd)
+
+    def mappings(self, names=()):
+        """
+        Mappings visible from the current directory with given names,
+        all of them sorted by name when `names` is empty.
+        """
+        mappings = self.config.mappings(self.cwd)
+        unknown = [n for n in names if n not in mappings]
+        if unknown:
+            raise GwmError(f"unknown mappings: {', '.join(unknown)}")
+        return [mappings[n] for n in names or sorted(mappings)]
 
     def mapping(self, sub):
         """

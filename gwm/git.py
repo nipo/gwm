@@ -51,15 +51,17 @@ class Git:
             command += ["--git-dir", self.git_dir]
         return command + list(args)
 
-    def run(self, *args, check=True, stream=False, input=None):
+    def run(self, *args, check=True, stream=False, input=None, env=None):
         """
         Runs a command and returns its stdout.  When `stream` is set,
         stderr goes to the terminal (progress of fetches, etc.).
-        `input` is fed to its stdin.
+        `input` is fed to its stdin, `env` overrides environment
+        variables.
         """
         command = self.command(args)
         proc = subprocess.run(
-            command, cwd=self.cwd, env=self.environment(), input=input,
+            command, cwd=self.cwd, env=self.environment() | (env or {}),
+            input=input,
             stdout=subprocess.PIPE,
             stderr=None if stream else subprocess.PIPE,
             text=True)

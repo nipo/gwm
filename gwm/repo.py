@@ -209,6 +209,30 @@ class SharedRepo:
                 result.append(key[len("remote."):-len(".url")])
         return result
 
+    def upstream(self, urls):
+        """
+        Full name of the upstream of the branch HEAD points to, or of
+        the default branch of a remote fetching one of `urls` (any
+        remote when none does).  None when nothing matches.
+        """
+        rev = self.git.value("rev-parse", "--symbolic-full-name",
+                             "HEAD@{upstream}")
+        if rev:
+            return rev
+        remotes = []
+        for url in urls:
+            remotes += [r for r in self.remotes_for(url) if r not in remotes]
+        if not remotes:
+            remotes = (self.git.value("remote") or "").split()
+        for remote in remotes:
+            for branch in ("HEAD", "main", "master"):
+                ref = f"refs/remotes/{remote}/{branch}"
+                full = self.git.value("rev-parse", "--symbolic-full-name",
+                                      ref)
+                if full:
+                    return full
+        return None
+
     def tracking_refs(self, remote):
         """
         Patterns of local refs where branches of `remote` are fetched.

@@ -105,56 +105,22 @@ class HeadsInspector:
         self.verbose = verbose
 
     def run(self, names=()):
-        mappings = self.ws.config.mappings(self.ws.cwd)
-        unknown = [n for n in names if n not in mappings]
-        if unknown:
-            raise GwmError(f"unknown mappings: {', '.join(unknown)}")
-        for name in names or sorted(mappings):
-            mapping = mappings[name]
+        for mapping in self.ws.mappings(names):
             repo = SharedRepo(mapping.path)
             if not repo.exists():
                 if names:
                     self.ws.reporter.line(
-                        f"{name}: missing {self.show(mapping.path)}")
+                        f"{mapping.name}: missing "
+                        f"{self.ws.reporter.short(mapping.path)}")
                 continue
             self.inspect(mapping, repo, bool(names))
-
-    def show(self, path):
-        if path == self.ws.cwd or path.startswith(self.ws.cwd + os.sep):
-            return os.path.relpath(path, self.ws.cwd)
-        home = os.path.expanduser("~")
-        if path.startswith(home + os.sep):
-            return "~" + path[len(home):]
-        return path
-
-    def default_base(self, mapping, repo):
-        """
-        Upstream of the branch HEAD of the shared repository points to,
-        or the default branch of a remote fetching a mapped URL.
-        """
-        rev = repo.git.value("rev-parse", "--symbolic-full-name",
-                             "HEAD@{upstream}")
-        if rev:
-            return rev
-        remotes = []
-        for url in mapping.urls:
-            remotes += [r for r in repo.remotes_for(url) if r not in remotes]
-        if not remotes and repo.git.value("remote"):
-            remotes = repo.git.run("remote").split()
-        for remote in remotes:
-            for branch in ("HEAD", "main", "master"):
-                ref = f"refs/remotes/{remote}/{branch}"
-                if repo.git.ok("rev-parse", "-q", "--verify", ref):
-                    return repo.git.value(
-                        "rev-parse", "--symbolic-full-name", ref) or ref
-        return None
 
     def inspect(self, mapping, repo, explicit):
         report = self.ws.reporter
         checkouts = [c for c in repo.checkouts() if c.head]
         if not checkouts and not explicit:
             return
-        base = self.base or self.default_base(mapping, repo)
+        base = self.base or repo.upstream(mapping.urls)
         if base is not None:
             commit = repo.git.value("rev-parse", "-q", "--verify",
                                     f"{base}^{{commit}}")
@@ -167,7 +133,8 @@ class HeadsInspector:
         else:
             commit = None
             header = "no base"
-        report.line(f"{mapping.name} {self.show(repo.path)} ({header})")
+        report.line(f"{mapping.name} {self.ws.reporter.short(repo.path)} "
+                    f"({header})")
         if not checkouts:
             report.line("  no checkouts")
             return
@@ -231,9 +198,9 @@ class HeadsInspector:
 
     def describe(self, checkout, sp, notes):
         if sp is not None:
-            where = (f"{self.show(sp.toplevel)} "
+            where = (f"{self.ws.reporter.short(sp.toplevel)} "
                      f"{os.path.relpath(checkout.path, sp.toplevel)}")
         else:
-            where = self.show(checkout.path)
+            where = self.ws.reporter.short(checkout.path)
         extra = f" ({', '.join(notes)})" if notes else ""
         return f"{where}{extra}"
