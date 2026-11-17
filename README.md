@@ -72,6 +72,20 @@ Unmapped submodules are handled as plain git submodules.
   dirty, on a branch, or when their superproject does not record their
   HEAD in its HEAD commit.
 
+- `git wm integrate [--onto rev] [-b branch] [--include-branches]
+  [--no-fetch] name`: rebases heads of checkouts of a shared repository
+  into a single history on top of `--onto` (default: the upstream used
+  by `heads`, fetched first), and points `branch` (default:
+  `gwm/integration`) to it.  Checkouts on a branch are left out unless
+  `--include-branches` is given; the current value of `branch` is
+  integrated as well.  A tip containing the base is kept as is, the
+  others are rebased over it, dropping changes already applied.
+  Rebases happen in a scratch worktree, `gwm-integrate` in the common
+  git directory of the shared repository.  On conflict, resolve there
+  and run `git wm integrate --continue name`, or drop everything with
+  `--abort`.  Changes of a head without an equivalent in the result
+  (e.g. skipped during a rebase) are listed at the end.
+
 - `git wm resolve urls`: shows which mapping applies to URLs.
 
 ## Caveats

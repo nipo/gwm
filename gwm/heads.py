@@ -1,6 +1,7 @@
 import os
 
 from .git import GwmError
+from .integrate import Integration
 from .repo import SharedRepo
 
 
@@ -117,7 +118,9 @@ class HeadsInspector:
 
     def inspect(self, mapping, repo, explicit):
         report = self.ws.reporter
-        checkouts = [c for c in repo.checkouts() if c.head]
+        scratch = Integration.worktree_path(repo)
+        checkouts = [c for c in repo.checkouts()
+                     if c.head and c.path != scratch]
         if not checkouts and not explicit:
             return
         base = self.base or repo.upstream(mapping.urls)
@@ -133,6 +136,8 @@ class HeadsInspector:
         else:
             commit = None
             header = "no base"
+        if Integration.load(repo) is not None:
+            header += ", integration in progress"
         report.line(f"{mapping.name} {self.ws.reporter.short(repo.path)} "
                     f"({header})")
         if not checkouts:

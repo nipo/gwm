@@ -5,6 +5,7 @@ import sys
 from .config import Config
 from .git import Git, GwmError
 from .heads import HeadsInspector
+from .integrate import Integrator
 from .ops import (Adopter, Detacher, Inspector, Remover, Repairer, Updater,
                   Workspace)
 from .repo import Superproject
@@ -79,6 +80,25 @@ class Cli:
                        help="mapping names (default: all mappings)")
 
         p = commands.add_parser(
+            "integrate", help="rebase heads of checkouts of a shared "
+            "repository into a single history")
+        p.add_argument("--onto", help="base revision (default: upstream "
+                       "branch)")
+        p.add_argument("-b", "--branch", help="branch pointing to the "
+                       "result (default: gwm/integration)")
+        p.add_argument("--include-branches", action="store_true",
+                       help="also integrate checkouts on a branch")
+        p.add_argument("--no-fetch", dest="fetch", action="store_false",
+                       help="do not fetch the remote of the base")
+        action = p.add_mutually_exclusive_group()
+        action.add_argument("--continue", dest="resume",
+                            action="store_true",
+                            help="resume after resolving a conflict")
+        action.add_argument("--abort", action="store_true",
+                            help="drop an integration in progress")
+        p.add_argument("name", help="mapping name")
+
+        p = commands.add_parser(
             "resolve", help="show the mapping applying to URLs")
         p.add_argument("urls", nargs="+")
 
@@ -107,6 +127,16 @@ class Cli:
                 return 0
             if args.command == "heads":
                 HeadsInspector(ws, args.base, args.verbose).run(args.names)
+                return 0
+            if args.command == "integrate":
+                op = Integrator(ws, args.onto, args.branch,
+                                args.include_branches, args.fetch)
+                if args.resume:
+                    op.resume(args.name)
+                elif args.abort:
+                    op.abort(args.name)
+                else:
+                    op.start(args.name)
                 return 0
             sp = Superproject.find(ws.cwd)
             match args.command:
