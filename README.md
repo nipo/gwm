@@ -84,7 +84,9 @@ Unmapped submodules are handled as plain git submodules.
   git directory of the shared repository.  On conflict, resolve there
   and run `git wm integrate --continue name`, or drop everything with
   `--abort`.  Changes of a head without an equivalent in the result
-  (e.g. skipped during a rebase) are listed at the end.
+  (e.g. skipped during a rebase) are listed at the end.  A commit with
+  the same patch-id, or the same author, author date and message (as
+  kept by rebases, even when resolving a conflict), is an equivalent.
 
 - `git wm propagate [--rev rev] [--in dir]... [--include-branches]
   [-m] [-f] [-n] name`: moves checkouts of a shared repository (those
@@ -92,8 +94,8 @@ Unmapped submodules are handled as plain git submodules.
   `gwm/integration`), as detached HEADs.  Checkouts on a branch are
   skipped unless `--include-branches` is given, which resets the branch.
   Dirty checkouts are skipped unless `-m` merges local changes.
-  Checkouts with changes not found in `rev` (compared by patch-id) are
-  skipped unless `-f` is given.  Worktrees that are not submodules are
+  Checkouts with changes without an equivalent in `rev` (as for
+  `integrate`) are skipped unless `-f` is given.  Worktrees that are not submodules are
   left alone.  Old heads not contained in `rev` are kept under
   `refs/gwm/propagate/`, and flagged when the upstream branch of their
   superproject records them.  Submodules of moved checkouts whose
@@ -113,6 +115,17 @@ Unmapped submodules are handled as plain git submodules.
   repository are flagged, as are superprojects that are themselves
   checkouts of a mapped repository.  `-n` only shows what would be
   done.
+
+- `git wm sync [--in dir]... [--no-cascade] [--include-branches]
+  [--no-fetch] [--log] [-n] names`: runs `integrate`, `propagate` and
+  `bump -c` on the named shared repositories, then on shared
+  repositories having checkouts that contain theirs, and so on up,
+  inner ones first.  `--in` restricts moves and commits to checkouts
+  below given directories.  Only checkouts at the integration result
+  are recorded in their superprojects.  When a step stops (e.g. on a
+  rebase conflict), fix the cause and run the same command again: done
+  steps are no-ops, and an integration in progress is continued.  `-n`
+  shows the processing order and current heads.
 
 - `git wm resolve urls`: shows which mapping applies to URLs.
 

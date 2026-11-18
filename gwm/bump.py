@@ -15,7 +15,8 @@ class Bumper:
     """
 
     def __init__(self, workspace, within=(), commit=False, message=None,
-                 log=False, allow_detached=False, dry_run=False):
+                 log=False, allow_detached=False, dry_run=False,
+                 target=None):
         self.ws = workspace
         self.within = within
         self.commit = commit
@@ -23,6 +24,7 @@ class Bumper:
         self.log = log
         self.allow_detached = allow_detached
         self.dry_run = dry_run
+        self.target = target
 
     def run(self, name):
         selection = Selection(self.ws, name, self.within)
@@ -47,6 +49,8 @@ class Bumper:
             return "not a submodule, skipped"
         if checkout.head is None:
             return "no HEAD, skipped"
+        if self.target is not None and checkout.head != self.target:
+            return f"not at {self.target[:10]}, skipped"
         if not self.commit:
             return None
         if any(os.path.exists(os.path.join(sp.gitdir(), n))

@@ -1,5 +1,6 @@
 import argparse
 import os
+import shlex
 import sys
 
 from .config import Config
@@ -8,6 +9,7 @@ from .bump import Bumper
 from .heads import HeadsInspector
 from .integrate import Integrator
 from .propagate import Propagator
+from .sync import Syncer
 from .ops import (Adopter, Detacher, Inspector, Remover, Repairer, Updater,
                   Workspace)
 from .repo import Superproject
@@ -138,6 +140,24 @@ class Cli:
         p.add_argument("name", help="mapping name")
 
         p = commands.add_parser(
+            "sync", help="integrate, propagate and bump shared "
+            "repositories, then those containing their checkouts")
+        p.add_argument("--in", dest="within", action="append", default=[],
+                       metavar="DIR", help="only move and bump checkouts "
+                       "below DIR (repeatable)")
+        p.add_argument("--no-cascade", dest="cascade", action="store_false",
+                       help="only process the named shared repositories")
+        p.add_argument("--include-branches", action="store_true",
+                       help="also integrate and move checkouts on a branch")
+        p.add_argument("--no-fetch", dest="fetch", action="store_false",
+                       help="do not fetch upstream branches")
+        p.add_argument("--log", action="store_true",
+                       help="list picked up commits in commit messages")
+        p.add_argument("-n", "--dry-run", action="store_true",
+                       help="only show the order and current heads")
+        p.add_argument("names", nargs="+", help="mapping names")
+
+        p = commands.add_parser(
             "resolve", help="show the mapping applying to URLs")
         p.add_argument("urls", nargs="+")
 
@@ -157,6 +177,8 @@ class Cli:
 
     @classmethod
     def main(cls, argv=None):
+        if argv is None:
+            argv = sys.argv[1:]
         args = cls.parser().parse_args(argv)
         try:
             Git.require_version(Git.MIN_VERSION, "gwm")
@@ -176,6 +198,11 @@ class Cli:
                     op.abort(args.name)
                 else:
                     op.start(args.name)
+                return 0
+            if args.command == "sync":
+                Syncer(ws, args.within, args.cascade, args.include_branches,
+                       args.fetch, args.log, args.dry_run,
+                       rerun=shlex.join(["git", "wm", *argv])).run(args.names)
                 return 0
             if args.command == "bump":
                 Bumper(ws, args.within, args.commit, args.message, args.log,
