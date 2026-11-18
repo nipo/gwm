@@ -260,8 +260,7 @@ class Integrator:
         git = state.repo.git
         lost = {}
         for head in state.heads:
-            out = git.run("cherry", state.current, head)
-            missing = [l[2:] for l in out.splitlines() if l.startswith("+")]
+            missing = state.repo.missing_changes(state.current, head)
             if missing:
                 lost[head] = missing
         ref = f"refs/heads/{state.branch}"

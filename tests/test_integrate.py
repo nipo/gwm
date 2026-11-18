@@ -114,6 +114,9 @@ class IntegrateTest(Diverged):
         self.git(self.scratch(), "add", "b.txt")
         out = self.gwm(self.root, "integrate", "--continue", "lib")
         self.assertIn("gwm/integration at", out)
+        self.assertNotIn("without an equivalent", out)
+        out = self.gwm(self.root, "propagate", "lib")
+        self.assertNotIn("skipped", out)
         result = self.result()
         self.assertEqual(self.git(self.store, "show", f"{result}:b.txt"),
                          "merged")

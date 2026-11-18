@@ -111,8 +111,7 @@ class Propagator:
         return None
 
     def lost(self, head):
-        out = self.repo.git.run("cherry", self.target, head)
-        return [l[2:] for l in out.splitlines() if l.startswith("+")]
+        return self.repo.missing_changes(self.target, head)
 
     def published(self, checkout, sp):
         """

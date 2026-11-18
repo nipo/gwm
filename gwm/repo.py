@@ -207,6 +207,35 @@ class SharedRepo:
     def has_commit(self, commit):
         return self.git.ok("cat-file", "-e", f"{commit}^{{commit}}")
 
+    def authorship(self, *revs):
+        """
+        Map of authorship key (author, author date, message) to commit,
+        for non-merge commits of a revision range.
+        """
+        out = self.git.run("log", "--no-merges", "--date=raw",
+                           "--format=%H%x00%an <%ae> %ad%x00%B%x1e", *revs)
+        result = {}
+        for record in out.split("\x1e"):
+            commit, _, key = record.strip("\n").partition("\0")
+            if commit:
+                result[key] = commit
+        return result
+
+    def missing_changes(self, result, head):
+        """
+        Non-merge commits of `head` without an equivalent in `result`:
+        a commit with the same patch-id, or with the same authorship,
+        which rebases and cherry-picks keep even when resolving
+        conflicts changes the patch.
+        """
+        out = self.git.run("cherry", result, head)
+        candidates = [l[2:] for l in out.splitlines() if l.startswith("+")]
+        if not candidates:
+            return []
+        present = self.authorship(result, f"^{head}")
+        keys = {c: k for k, c in self.authorship(head, f"^{result}").items()}
+        return [c for c in candidates if keys.get(c) not in present]
+
     def remotes_for(self, url):
         out = self.git.value("config", "--get-regexp", r"^remote\..*\.url$")
         result = []
