@@ -96,7 +96,10 @@ Unmapped submodules are handled as plain git submodules.
   skipped unless `-f` is given.  Worktrees that are not submodules are
   left alone.  Old heads not contained in `rev` are kept under
   `refs/gwm/propagate/`, and flagged when the upstream branch of their
-  superproject records them.  `-n` only shows what would be done.
+  superproject records them.  Submodules of moved checkouts whose
+  gitlink changed are checked out as by `update` when they were at the
+  previous gitlink or are new; others are reported and left alone.
+  `-n` only shows what would be done.
 
 - `git wm bump [--in dir]... [-c] [-m message] [--log]
   [--allow-detached] [-n] name`: stages HEAD of checkouts of a shared

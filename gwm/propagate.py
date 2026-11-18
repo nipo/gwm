@@ -1,9 +1,10 @@
 import os
 import time
 
-from .git import GitDir, GwmError
+from .git import Git, GitDir, GitLink, GwmError
 from .integrate import Integration, Integrator
-from .repo import SharedRepo
+from .ops import Updater
+from .repo import SharedRepo, Superproject
 
 
 class Selection:
@@ -152,6 +153,7 @@ class Propagator:
         if self.dry_run:
             self.say(checkout, sp, f"{old[:10] if old else '-'} -> "
                      f"{self.target[:10]} would move ({', '.join(notes)})")
+            self.update_nested(checkout, old)
             return
         if rewritten:
             ref = (f"refs/gwm/propagate/{self.stamp}/"
@@ -167,3 +169,61 @@ class Propagator:
                     "--detach", self.target)
         self.say(checkout, sp, f"{old[:10] if old else '-'} -> "
                  f"{self.target[:10]} ({', '.join(notes)})")
+        self.update_nested(checkout, old)
+
+    def nested_changes(self, checkout, old):
+        """
+        (path, old commit or None, new commit) of gitlinks changed
+        between `old` and the target.
+        """
+        out = checkout.git().run("diff-tree", "-r", "-z", "--no-renames",
+                                 old, self.target)
+        items = out.split("\0")
+        result = []
+        for meta, path in zip(items[0::2], items[1::2]):
+            old_mode, new_mode, old_sha, new_sha, _ = meta[1:].split(" ")
+            if new_mode != "160000":
+                continue
+            result.append((path, old_sha if old_mode == "160000" else None,
+                           new_sha))
+        return result
+
+    def update_nested(self, checkout, old):
+        """
+        Checks out submodules of a moved checkout whose gitlink changed,
+        when they were at the previous gitlink (or are new).  Others are
+        reported and left alone.
+        """
+        if old is None:
+            return
+        changes = self.nested_changes(checkout, old)
+        if not changes:
+            return
+        sp = Superproject(checkout.path)
+        subs = {s.path: s for s in sp.submodules()} if not self.dry_run \
+            else {}
+        report = self.ws.reporter
+        paths = []
+        for path, before, after in changes:
+            abspath = os.path.join(checkout.path, path)
+            populated = GitLink.read(abspath) is not None
+            head = Git(abspath).value("rev-parse", "HEAD") \
+                if populated else None
+            if head == after:
+                continue
+            if populated and head != before:
+                report.line(f"    {path}: at {head[:10]}, not at "
+                            f"{(before or '-')[:10]}, left alone")
+            elif not populated and before is not None:
+                continue
+            elif self.dry_run:
+                report.line(f"    {path}: would check out {after[:10]}")
+            elif path in subs:
+                paths.append(subs[path].abspath)
+        if not paths:
+            return
+        try:
+            Updater(self.ws, recursive=True, clone_missing=False).run(
+                sp, paths)
+        except GwmError as e:
+            report.line(f"    nested update failed: {e}")

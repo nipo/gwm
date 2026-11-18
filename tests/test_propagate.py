@@ -1,6 +1,7 @@
 import os
 
 from .test_heads import Diverged
+from .test_ops import Scenario
 
 
 class PropagateTest(Diverged):
@@ -104,3 +105,69 @@ class PropagateTest(Diverged):
         self.commit(self.c, "b.txt", "not b\n", "c version of b")
         self.gwm(self.root, "integrate", "lib", expect=1)
         self.gwm(self.root, "propagate", "lib", expect=1)
+
+
+class Nested(Scenario):
+    """
+    `proj` is mapped as well and checked out in `top1` and `top2`, each
+    containing a nested checkout of `lib`.  In `top1`, `lib` has a new
+    commit recorded by `proj`.
+    """
+
+    def setUp(self):
+        super().setUp()
+        top = self.make_repo("top", [{"TOP": "top\n"}])
+        self.add_submodule(top, self.proj, "proj")
+        self.proj_store = self.bare_store("proj", self.proj)
+        self.write_config(self.root, {"lib": (self.lib, self.store),
+                                      "proj": (self.proj, self.proj_store)})
+        self.tops = []
+        for name in ("top1", "top2"):
+            work = self.clone(top, name)
+            self.gwm(work, "update")
+            self.tops.append(work)
+        self.git(self.store, "fetch", "-q", "origin",
+                 "+refs/heads/*:refs/remotes/origin/*")
+        self.git(self.proj_store, "fetch", "-q", "origin",
+                 "+refs/heads/*:refs/remotes/origin/*")
+        self.base = self.git(self.store, "rev-parse", "origin/main")
+        lib1 = self.nested_lib(0)
+        self.write(os.path.join(lib1, "new.txt"), "new\n")
+        self.git(lib1, "add", "new.txt")
+        self.git(lib1, "commit", "-q", "-m", "new lib change")
+        self.new = self.git(lib1, "rev-parse", "HEAD")
+
+    def nested_lib(self, index):
+        return os.path.join(self.tops[index], "proj", "deps", "lib")
+
+    def proj_of(self, index):
+        return os.path.join(self.tops[index], "proj")
+
+
+class PropagateNestedTest(Nested):
+    def setUp(self):
+        super().setUp()
+        self.gwm(self.root, "bump", "-c", "--in", "top1", "lib")
+        self.gwm(self.root, "integrate", "--no-fetch", "proj")
+
+    def test_updates_nested(self):
+        out = self.gwm(self.root, "propagate", "-n", "proj")
+        self.assertIn("deps/lib: would check out", out)
+        self.assertEqual(self.git(self.nested_lib(1), "rev-parse", "HEAD"),
+                         self.base)
+        self.gwm(self.root, "propagate", "proj")
+        self.assertEqual(self.git(self.nested_lib(1), "rev-parse", "HEAD"),
+                         self.new)
+        self.assertEqual(self.git(self.proj_of(1), "status", "--porcelain"),
+                         "")
+
+    def test_moved_nested_left_alone(self):
+        lib2 = self.nested_lib(1)
+        self.write(os.path.join(lib2, "other.txt"), "other\n")
+        self.git(lib2, "add", "other.txt")
+        self.git(lib2, "commit", "-q", "-m", "other lib change")
+        moved = self.git(lib2, "rev-parse", "HEAD")
+        out = self.gwm(self.root, "propagate", "proj")
+        self.assertIn("deps/lib: at ", out)
+        self.assertIn("left alone", out)
+        self.assertEqual(self.git(lib2, "rev-parse", "HEAD"), moved)
