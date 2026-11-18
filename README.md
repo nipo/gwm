@@ -105,7 +105,8 @@ Unmapped submodules are handled as plain git submodules.
   `-c`, commits each gitlink alone, as `<path>: Update to <commit>` by
   default, or with `-m` message; `--log` lists picked up commits.
   Superprojects with a detached HEAD are skipped unless
-  `--allow-detached` is given.  Heads not on any remote of the shared
+  `--allow-detached` is given or they are themselves checkouts of a
+  shared repository.  Heads not on any remote of the shared
   repository are flagged, as are superprojects that are themselves
   checkouts of a mapped repository.  `-n` only shows what would be
   done.

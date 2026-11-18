@@ -108,9 +108,6 @@ class BumpTest(Diverged):
         nested = os.path.join(work, "proj", "deps", "lib")
         self.git(nested, "checkout", "-q", "--detach", self.target)
         out = self.gwm(self.root, "bump", "--in", "top", "-c", "lib")
-        self.assertIn("superproject HEAD is detached", out)
-        out = self.gwm(self.root, "bump", "--in", "top", "-c",
-                       "--allow-detached", "lib")
         self.assertIn("superproject is a checkout of proj", out)
         self.assertEqual(self.git(os.path.join(work, "proj"), "rev-parse",
                                   "HEAD:deps/lib"), self.target)

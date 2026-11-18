@@ -46,6 +46,24 @@ class Workspace:
         self.cwd = os.path.realpath(cwd)
         self.config = config or Config()
         self.reporter = reporter or Reporter(self.cwd)
+        self.owners = None
+
+    def owner(self, toplevel):
+        """
+        Name of the mapping whose shared repository the working tree at
+        `toplevel` is a checkout of, or None.
+        """
+        if self.owners is None:
+            self.owners = {}
+            for mapping in self.mappings():
+                repo = SharedRepo(mapping.path)
+                if repo.exists():
+                    self.owners.setdefault(repo.common_dir(), mapping.name)
+        common = Git(toplevel).value("rev-parse", "--path-format=absolute",
+                                     "--git-common-dir")
+        if common is None:
+            return None
+        return self.owners.get(os.path.realpath(common))
 
     def mappings(self, names=()):
         """

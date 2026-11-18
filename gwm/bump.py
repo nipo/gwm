@@ -1,14 +1,17 @@
 import os
 
-from .git import GitDir, GwmError
+from .git import GitDir
 from .propagate import Selection
-from .repo import SharedRepo
 
 
 class Bumper:
     """
     Records HEAD of checkouts of a shared repository in their
     superprojects: stages the gitlink, and commits it alone on request.
+
+    Committing on a detached superproject HEAD is refused, unless the
+    superproject is itself a checkout of a shared repository: detached
+    is their normal state, and integration collects such commits.
     """
 
     def __init__(self, workspace, within=(), commit=False, message=None,
@@ -24,7 +27,6 @@ class Bumper:
     def run(self, name):
         selection = Selection(self.ws, name, self.within)
         self.repo = selection.repo
-        self.owners = None
         self.ws.reporter.line(
             f"{name}: {self.ws.reporter.short(self.repo.path)}")
         for checkout in selection.checkouts():
@@ -37,22 +39,6 @@ class Bumper:
             where = (f"{self.ws.reporter.short(sp.toplevel)} "
                      f"{os.path.relpath(checkout.path, sp.toplevel)}")
         self.ws.reporter.line(f"  {where}: {message}")
-
-    def owner(self, sp):
-        """
-        Name of the mapping whose shared repository the superproject is
-        a checkout of, or None.
-        """
-        if self.owners is None:
-            self.owners = {}
-            for mapping in self.ws.mappings():
-                repo = SharedRepo(mapping.path)
-                if repo.exists():
-                    self.owners.setdefault(repo.common_dir(), mapping.name)
-        common = os.path.realpath(sp.git.run(
-            "rev-parse", "--path-format=absolute",
-            "--git-common-dir").strip())
-        return self.owners.get(common)
 
     def refusal(self, checkout, sp):
         if not checkout.exists():
@@ -67,7 +53,8 @@ class Bumper:
                for n in GitDir.IN_PROGRESS):
             return "operation in progress in superproject, skipped"
         if (not self.allow_detached
-                and sp.git.value("symbolic-ref", "-q", "HEAD") is None):
+                and sp.git.value("symbolic-ref", "-q", "HEAD") is None
+                and self.ws.owner(sp.toplevel) is None):
             return "superproject HEAD is detached, skipped"
         return None
 
@@ -91,7 +78,7 @@ class Bumper:
         if not self.repo.git.run("for-each-ref", "--count=1", "--contains",
                                  checkout.head, "refs/remotes/").strip():
             notes.append("not on any remote")
-        owner = self.owner(sp) if self.commit else None
+        owner = self.ws.owner(sp.toplevel)
         if owner is not None:
             notes.append(f"superproject is a checkout of {owner}")
         shown = f"{old[:10] if old else '-'} -> {checkout.head[:10]}"
