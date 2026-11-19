@@ -9,14 +9,24 @@ class Mapping:
     Association of repository URLs to a shared local repository.
     """
 
-    def __init__(self, name, path, urls, source):
+    def __init__(self, name, path, urls, source, raw_urls=None):
         self.name = name
         self.path = path
         self.urls = urls
         self.source = source
+        self.raw_urls = raw_urls or [u.key for u in urls]
 
     def __repr__(self):
         return f"Mapping({self.name!r}, {self.path!r}, from {self.source})"
+
+    def clone_url(self):
+        """
+        URL to clone the shared repository from: the first one, made
+        absolute when it is a local path.
+        """
+        if self.urls[0].key.startswith("file:"):
+            return self.urls[0].key[len("file:"):]
+        return self.raw_urls[0]
 
 
 class ConfigFile:
@@ -65,7 +75,7 @@ class ConfigFile:
             path = os.path.realpath(os.path.join(
                 self.directory, os.path.expanduser(entry["path"][0])))
             urls = [RepoUrl.resolve(u, self.directory) for u in entry["url"]]
-            mapping = Mapping(name, path, urls, self.path)
+            mapping = Mapping(name, path, urls, self.path, entry["url"])
             for url in urls:
                 other = self.mappings.get(url)
                 if other is not None and other is not mapping:

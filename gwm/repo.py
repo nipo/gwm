@@ -188,14 +188,43 @@ class SharedRepo:
     @classmethod
     def create(cls, path, url):
         """
-        Creates a bare repository tracking `url` as `origin`.
+        Creates a bare repository tracking `url` as `origin`.  `path`
+        may exist as an empty directory.
         """
-        os.makedirs(path)
+        os.makedirs(path, exist_ok=True)
+        if os.listdir(path):
+            raise GwmError(f"{path}: exists and is not empty")
         Git(path).run("init", "-q", "--bare")
         repo = cls(path)
         repo.git.run("remote", "add", "origin", url)
-        repo.git.run("fetch", "origin", stream=True)
+        repo.fetch("origin")
         return repo
+
+    def remotes(self):
+        return (self.git.value("remote") or "").split()
+
+    def enable_tracking(self, remote):
+        """
+        Makes `remote` fetch its branches to `refs/remotes/<remote>/`
+        when it has no fetch refspec, as left by `git clone --bare`.
+        Returns whether it was changed.
+        """
+        if self.git.value("config", "--get-all", f"remote.{remote}.fetch"):
+            return False
+        self.git.run("config", "--add", f"remote.{remote}.fetch",
+                     f"+refs/heads/*:refs/remotes/{remote}/*")
+        return True
+
+    def fetch(self, remote):
+        """
+        Fetches `remote`, then records its default branch as
+        `refs/remotes/<remote>/HEAD` when unknown.
+        """
+        self.git.run("fetch", remote, stream=True)
+        head = f"refs/remotes/{remote}/HEAD"
+        if not self.git.ok("symbolic-ref", "-q", head):
+            self.git.run("remote", "set-head", remote, "--auto",
+                         check=False)
 
     def common_dir(self):
         if self.common_dir_cache is None:
@@ -259,7 +288,7 @@ class SharedRepo:
         for url in urls:
             remotes += [r for r in self.remotes_for(url) if r not in remotes]
         if not remotes:
-            remotes = (self.git.value("remote") or "").split()
+            remotes = self.remotes()
         for remote in remotes:
             for branch in ("HEAD", "main", "master"):
                 ref = f"refs/remotes/{remote}/{branch}"

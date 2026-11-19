@@ -61,6 +61,15 @@ Unmapped submodules are handled as plain git submodules.
 
 - `git wm status [paths]`: shows the state of submodules.
 
+- `git wm fetch [names]`: creates missing shared repositories (all
+  mappings visible from the current directory, or the named ones) as
+  bare repositories with an `origin` remote set to the first URL of the
+  mapping, and fetches existing ones from their remotes matching a
+  mapped URL (adding `origin` when there is none).  Remotes without a
+  fetch refspec, as left by `git clone --bare`, are set to fetch
+  branches to `refs/remotes/<remote>/`.  The default branch of fetched
+  remotes is recorded as `refs/remotes/<remote>/HEAD` when unknown.
+
 - `git wm heads [-v] [--base rev] [names]`: shows checkouts of shared
   repositories (all mappings visible from the current directory, or
   the named ones), grouped by HEAD.  Each head is compared to `--base`,

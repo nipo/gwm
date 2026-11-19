@@ -6,6 +6,7 @@ import sys
 from .config import Config
 from .git import Git, GwmError
 from .bump import Bumper
+from .fetch import Fetcher
 from .heads import HeadsInspector
 from .integrate import Integrator
 from .propagate import Propagator
@@ -72,6 +73,12 @@ class Cli:
         p.add_argument("--no-recursive", dest="recursive",
                        action="store_false")
         p.add_argument("paths", nargs="*")
+
+        p = commands.add_parser(
+            "fetch", help="create missing shared repositories and fetch "
+            "all of them")
+        p.add_argument("names", nargs="*",
+                       help="mapping names (default: all mappings)")
 
         p = commands.add_parser(
             "heads", help="show checkouts of shared repositories grouped "
@@ -185,6 +192,9 @@ class Cli:
             ws = Workspace(os.path.abspath(args.directory), Config())
             if args.command == "resolve":
                 cls.resolve(ws, args.urls)
+                return 0
+            if args.command == "fetch":
+                Fetcher(ws).run(args.names)
                 return 0
             if args.command == "heads":
                 HeadsInspector(ws, args.base, args.verbose).run(args.names)
